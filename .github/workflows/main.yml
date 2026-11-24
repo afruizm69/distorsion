@@ -25,14 +25,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Buscar el proyecto
+        shell: bash
+        run: |
+          f=$(find . -name CMakeLists.txt -not -path "./build/*" -not -path "*/_deps/*" | awk '{ print length, $0 }' | sort -n | head -1 | cut -d" " -f2-)
+          if [ -z "$f" ]; then
+            echo "::error::No encuentro CMakeLists.txt. Sube los archivos del proyecto (CMakeLists.txt, Source, INSTALAR.txt...)."
+            exit 1
+          fi
+          echo "Proyecto encontrado en: $(dirname "$f")"
+          echo "PROJ=$(dirname "$f")" >> "$GITHUB_ENV"
+
       - name: Configurar
+        working-directory: ${{ env.PROJ }}
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar
+        working-directory: ${{ env.PROJ }}
         run: cmake --build build --config Release --parallel 4 --target DistorsionExtrema_All
 
       - name: Firmar (ad-hoc) y empaquetar - macOS
         if: runner.os == 'macOS'
+        working-directory: ${{ env.PROJ }}
         run: |
           SRC="build/DistorsionExtrema_artefacts/Release"
           mkdir -p "dist/DISTORSION EXTREMA"
@@ -40,11 +54,12 @@ jobs:
             codesign --force --deep --sign - "$SRC/$b"
             cp -R "$SRC/$b" "dist/DISTORSION EXTREMA/"
           done
-          cp INSTALAR.txt "dist/DISTORSION EXTREMA/"
+          cp INSTALAR.txt "dist/DISTORSION EXTREMA/" || true
           cd dist && ditto -c -k --sequesterRsrc --keepParent "DISTORSION EXTREMA" DISTORSION-EXTREMA-macOS.zip
 
       - name: Empaquetar - Windows
         if: runner.os == 'Windows'
+        working-directory: ${{ env.PROJ }}
         shell: pwsh
         run: |
           $src = "build/DistorsionExtrema_artefacts/Release"
@@ -52,17 +67,17 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dst | Out-Null
           Copy-Item -Recurse "$src/VST3/DISTORSION EXTREMA.vst3" $dst
           Copy-Item "$src/Standalone/DISTORSION EXTREMA.exe" $dst
-          Copy-Item INSTALAR.txt $dst
+          if (Test-Path INSTALAR.txt) { Copy-Item INSTALAR.txt $dst }
           Compress-Archive -Path $dst -DestinationPath "dist/DISTORSION-EXTREMA-Windows.zip"
 
       - name: Subir descarga
         uses: actions/upload-artifact@v4
         with:
           name: DISTORSION-EXTREMA-${{ matrix.nombre }}
-          path: dist/*.zip
+          path: ${{ env.PROJ }}/dist/*.zip
 
       - name: Publicar en Releases (solo con etiqueta v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: ${{ env.PROJ }}/dist/*.zip
