@@ -1,0 +1,68 @@
+name: Compilar DISTORSION EXTREMA
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compilar:
+    name: ${{ matrix.nombre }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            nombre: macOS
+          - os: windows-latest
+            nombre: Windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compilar
+        run: cmake --build build --config Release --parallel 4 --target DistorsionExtrema_All
+
+      - name: Firmar (ad-hoc) y empaquetar - macOS
+        if: runner.os == 'macOS'
+        run: |
+          SRC="build/DistorsionExtrema_artefacts/Release"
+          mkdir -p "dist/DISTORSION EXTREMA"
+          for b in "VST3/DISTORSION EXTREMA.vst3" "AU/DISTORSION EXTREMA.component" "Standalone/DISTORSION EXTREMA.app"; do
+            codesign --force --deep --sign - "$SRC/$b"
+            cp -R "$SRC/$b" "dist/DISTORSION EXTREMA/"
+          done
+          cp INSTALAR.txt "dist/DISTORSION EXTREMA/"
+          cd dist && ditto -c -k --sequesterRsrc --keepParent "DISTORSION EXTREMA" DISTORSION-EXTREMA-macOS.zip
+
+      - name: Empaquetar - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $src = "build/DistorsionExtrema_artefacts/Release"
+          $dst = "dist/DISTORSION EXTREMA"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item -Recurse "$src/VST3/DISTORSION EXTREMA.vst3" $dst
+          Copy-Item "$src/Standalone/DISTORSION EXTREMA.exe" $dst
+          Copy-Item INSTALAR.txt $dst
+          Compress-Archive -Path $dst -DestinationPath "dist/DISTORSION-EXTREMA-Windows.zip"
+
+      - name: Subir descarga
+        uses: actions/upload-artifact@v4
+        with:
+          name: DISTORSION-EXTREMA-${{ matrix.nombre }}
+          path: dist/*.zip
+
+      - name: Publicar en Releases (solo con etiqueta v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
