@@ -17,8 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            nombre: macOS
           - os: windows-latest
             nombre: Windows
 
